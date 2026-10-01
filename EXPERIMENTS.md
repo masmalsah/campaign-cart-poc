@@ -5,6 +5,19 @@ Proof-of-concept work for the SDK-side questions raised on
 flatten the module graph, skip or parallelize the location lookup, and start
 the campaign/calculate calls earlier.
 
+> **⚠️ ERRATUM (2026-10-01): every measurement dated 2026-09-30 below was taken
+> on a broken test rig and is superseded by the "Corrected results" section at
+> the end.** The test page was served with the wrong site root, so all of its
+> absolute `/silver-sheets/...` asset references 404'd — including `config.js`.
+> Consequences: `window.nextConfig` never existed at loader time, so the
+> experiment C/D/E prefetch **never executed in any 09-30 run** (its guard
+> no-op'd) and every "prefetch bought nothing" conclusion was wrong; the page
+> was also missing its CSS bundle and head scripts, making absolute times
+> optimistic. The "No nextConfig found" template observation was this same
+> artifact — the shipped config-before-loader order is correct (verified
+> independently three ways on the template side). The 09-30 sections are kept
+> for the record of what was tried, not for their numbers.
+
 ## Method
 
 - **Page:** local copy of the built velin `silver-sheets/checkout/` page
@@ -155,3 +168,53 @@ and sequential dynamic-import rounds during boot.
   calls for every integration shape without any scheduling fight.
 - Re-run C2/D on real hardware (mid-range Android) to check how much of the
   starvation is an artifact of CDP throttling.
+
+## Corrected results (2026-10-01, fixed rig)
+
+Rig fix: the built site is now served mounted at `/silver-sheets/` so every
+absolute asset path resolves — `config.js`, both first-party head scripts, the
+CSS bundle, fonts. Same throttle profile, tags blocked, `?ignore=true`,
+3 runs, medians (cold-CDN outlier runs excluded).
+
+### Desktop (emulated: 150 ms RTT, 1.6 Mbps, 4× CPU)
+
+| Variant | First page-level API | `next-display-ready` |
+|---|---|---|
+| Baseline (`39f806a2`) | 5.43 s (`/campaigns/`) | 6.77 s |
+| A: static modulepreload (`0b57fd98`) | 5.36 s (`/campaigns/`) | 6.57 s |
+| B: 40-chunk boot-set preload (`2ab9dc70`) | 5.99 s | 7.15 s (noisy) |
+| C2: worker prefetch + A (`d83b8c43`) | 5.37 s (`/calculate/`) | **6.34 s** |
+
+### Pixel 4a 5G (real Chrome, network throttle only)
+
+| Variant | `next-display-ready` | vs baseline |
+|---|---|---|
+| Baseline | 6.77 s | — |
+| A: static modulepreload | 6.50 s | −0.27 s |
+| B: boot-set preload | 6.64 s | within noise |
+| C2: worker prefetch + A | **6.19 s** | **−0.58 s (−9%)** |
+
+### Corrected conclusions
+
+1. **The loader-side API prefetch (experiment C2) is the best verified win:
+   −0.58 s on a real device, with the tightest run-to-run variance measured
+   (6.18/6.25/6.19 s).** Adoption is confirmed: in every C2 run the page's
+   resource log contains no `/campaigns/` request at all — the worker fetched
+   it early and the SDK adopted the response. The 09-30 "no gain" verdicts
+   existed only because the broken rig prevented the prefetch from ever
+   arming.
+2. **Experiment A (static-graph modulepreload) is a real but smaller win**
+   (−0.27 s device) than the broken rig suggested. Still ~20 lines and
+   zero-behavior-change; C2 includes it.
+3. **Experiment B does not survive the corrected rig**: with the page's real
+   assets loading, the 40-chunk preload burst competes for bandwidth and adds
+   nothing over A.
+4. Realistic baseline for a direct mobile landing on this page is **~6.8 s**,
+   not the ~5.5 s previously reported.
+5. The 09-30 trace/boot-log phase breakdown was taken on the asset-less page
+   and needs re-capture before being quoted.
+
+Open: re-run the template side's "classic async loader + inlined nextConfig"
+idea on this fixed rig — with config inlined in `<head>`, an async classic
+loader could arm the C2 prefetch at ~0.6 s instead of ~2.4 s, which is now
+worth testing properly since the prefetch demonstrably works.
