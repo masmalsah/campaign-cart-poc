@@ -112,11 +112,38 @@ throttle, cold HTTP cache per run, 3 runs, medians:
 | C2: + worker prefetch (`d83b8c43`) | 3.30 s | 4.77 s (no gain over A) |
 | D: + classic `async` loader tag | 3.58 s | 4.96 s (noisy; no gain) |
 
+Follow-up device runs after the trace finding (below):
+
+| Variant | First `/campaigns/` | `next-display-ready` |
+|---|---|---|
+| B: 40-chunk boot-set preload (`2ab9dc70`) | 3.37 s | **4.35 s (−1.1 s, −20%)** |
+| E: B + classic `async` loader tag | 3.52 s | 4.55 s (no gain over B) |
+
 The real device is *slower* than the emulated profile (5.46 s vs 4.81 s
-baseline) and confirms every emulated verdict: Experiment A's gain is real
-and larger on device; the worker prefetch adds nothing even on real
-multi-core silicon, so the main-thread/evaluation floor is not a throttling
-artifact.
+baseline). Experiment A's gain is real and larger on device, and the worker
+prefetch still adds nothing — but the device *reverses* the emulated verdict
+on B: the boot-set preload is the best result measured (−20%), and its
+emulated regression was a CPU-throttle artifact.
+
+### Trace finding: the device is idle, not CPU-bound
+
+A CDP performance trace of the exp-A page on the Pixel (ready at 4.28 s)
+shows the main thread busy only **1.44 s** of the window — idle/waiting
+**2.84 s**. ParseHTML is 73 ms, SDK compile 4 ms, style/layout 293 ms. The
+emulated 4× CPU profile made evaluation look like the floor; on real
+hardware the floor is network waiting: the dynamic-import waterfall and the
+serialized geo → campaigns → calculate chain. This is why B wins on device
+and why first `/campaigns/` stays pinned at ~3.4 s in every variant — the
+boot's serial step structure, not the CPU, holds it there.
+
+### Next investigation
+
+First API dispatch sits at ~3.4 s on device in every variant, including
+with all chunks preloaded and the loader running at 0.55 s. The gap between
+DOMContentLoaded (~1.5 s) and the campaigns call (~3.4 s) needs per-boot-step
+timestamps (the SDK's debug logs carry them) to find which initializer step
+owns it — suspects are the geo round trip inside the location/currency step
+and sequential dynamic-import rounds during boot.
 
 ### Open levers
 
