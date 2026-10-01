@@ -111,8 +111,49 @@ const minifyEsLibChunks = (): Rollup.OutputPlugin => ({
   },
 });
 
+// Injects the ES entry's static-import closure into `dist/loader.js`
+// (replacing the `/*__NEXT_PRELOAD_LIST__*/[]` placeholder) so the loader can
+// emit a modulepreload per chunk up front. Without it the browser discovers the
+// graph level by level — 4 sequential round trips on this build — and on a
+// high-RTT connection each level costs a full RTT before the next can start.
+// Dynamic imports are deliberately excluded: preloading them would download
+// debug-only and on-demand code on every page.
+const loaderPreloadManifest = (): Plugin => {
+  let manifest: string[] = [];
+  return {
+    name: 'loader-preload-manifest',
+    generateBundle(outputOptions, bundle) {
+      if (outputOptions.format !== 'es') return;
+      const byName = new Map(
+        Object.values(bundle)
+          .filter((c): c is Rollup.OutputChunk => c.type === 'chunk')
+          .map(c => [c.fileName, c])
+      );
+      const seen = new Set<string>();
+      const walk = (f: string): void => {
+        if (seen.has(f)) return;
+        seen.add(f);
+        byName.get(f)?.imports.forEach(walk);
+      };
+      walk('index.js');
+      seen.delete('index.js'); // the loader already preloads the entry
+      manifest = [...seen];
+      // Vite copies `public/` into `dist/` after plugin hooks run, so patching
+      // dist/loader.js here would be overwritten. The manifest is emitted as a
+      // build asset instead, and `scripts/patch-loader-preload.mjs` (run as the
+      // next build step) splices it into the copied loader.
+      this.emitFile({
+        type: 'asset',
+        fileName: 'preload-manifest.json',
+        source: JSON.stringify(manifest),
+      });
+    },
+  };
+};
+
 export default defineConfig({
   plugins: [
+    loaderPreloadManifest(),
     // TypeScript declarations
     dts({
       include: ['src/**/*'],

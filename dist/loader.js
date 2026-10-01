@@ -111,6 +111,20 @@
   link.href = sdkUrl;
   document.head.appendChild(link);
 
+  // Preload the entry's whole static chunk graph so all levels download in
+  // parallel instead of being discovered one import level at a time. The list
+  // is injected at build time by the loader-preload-manifest plugin; in dev
+  // (and any non-built copy) it stays empty and this loop is a no-op.
+  if (!isDebug) {
+    const PRELOAD_LIST = ["chunks/core-services-DZknzj5t.js","chunks/api-xK3ZYeZs.js","chunks/index-BWgu7QPI.js","chunks/state-DzVth2GG.js","chunks/vendor-hZBvDXAx.js","chunks/utils-BqmDVq00.js","chunks/debug-bDdzhmgA.js","chunks/analytics-DFA0bvbc.js"];
+    for (const chunkPath of PRELOAD_LIST) {
+      const chunkLink = document.createElement('link');
+      chunkLink.rel = 'modulepreload';
+      chunkLink.href = `${PROD_HOST}/${chunkPath}`;
+      document.head.appendChild(chunkLink);
+    }
+  }
+
   // Load SDK as ES module
   const moduleScript = document.createElement('script');
   moduleScript.type = 'module';
