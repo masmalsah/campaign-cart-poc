@@ -18,7 +18,7 @@ async function runOnce(variant) {
   });
   const page = await context.newPage();
   const BLOCKED = [
-    'googletagmanager.com', 'google-analytics.com', 'doubleclick.net',
+    'googletagmanager.com', 'google-analytics.com', 'analytics.google.com', 'doubleclick.net',
     'google.ca', 'google.com/ads', 'convertexperiments.com', 'sd2rew.com',
     'datadoghq-browser-agent.com', 'facebook.net', 'facebook.com',
   ];
