@@ -88,50 +88,69 @@
   }
 
   // Prefetch the boot-critical API responses while the SDK modules download.
-  // The SDK only adopts an in-flight response when its own resolved inputs
-  // (currency, lang) match what was prefetched — on any mismatch or error it
-  // falls through to its normal request, so this can waste a request but
-  // never change behavior. Requires window.nextConfig to be set before the
-  // loader runs (the data-config-url path arrives too late to prefetch).
-  if (!isDebug && window.nextConfig && window.nextConfig.apiKey) {
+  // The work runs in an inline Web Worker, not on the main thread: module
+  // evaluation keeps the main thread in long tasks for seconds on slow
+  // devices, which starves any promise chain here (the geo→campaigns
+  // dependency never fired early when chained with main-thread .then()).
+  // The worker fetches geo/countries/messages, derives the currency, chains
+  // the campaigns request, and parses all JSON off-thread.
+  //
+  // Each value on window.__nextPrefetch is a promise of PARSED data (not a
+  // Response); campaigns resolves to { currency, data }. The SDK adopts a
+  // result only when its own resolved inputs (currency, lang) match — on any
+  // mismatch or error it falls through to its normal request, so this can
+  // waste a request but never change behavior. Requires window.nextConfig to
+  // be set before the loader runs.
+  if (!isDebug && window.nextConfig && window.nextConfig.apiKey && window.Worker) {
     try {
-      const pf = (window.__nextPrefetch = {});
-      const I18N_HOST = 'https://i18n-rules.nextcommerce.com';
-      const lang = 'en';
-      pf.lang = lang;
-      pf.geo = fetch(`${I18N_HOST}/v1/geo?include=rules,states&lang=${lang}`);
-      pf.countries = fetch(`${I18N_HOST}/v1/countries?lang=${lang}`);
-      pf.messages = fetch(`${I18N_HOST}/v1/locales/${lang}`);
-
-      const campaignsFor = currency => {
-        pf.campaignsCurrency = currency || '';
-        const search = currency
-          ? `?currency=${encodeURIComponent(currency)}`
-          : '';
-        pf.campaigns = fetch(
-          `https://campaigns.apps.29next.com/api/v1/campaigns/${search}`,
-          { headers: { Authorization: window.nextConfig.apiKey } }
+      const workerSrc = `self.onmessage = async e => {
+        const { apiKey, lang, urlCurrency, auto } = e.data;
+        const I18N = 'https://i18n-rules.nextcommerce.com';
+        const json = (u, opts) => fetch(u, opts).then(r => { if (!r.ok) throw new Error(r.status); return r.json(); });
+        const post = (name, p) => p.then(
+          data => self.postMessage({ name, ok: true, data }),
+          () => self.postMessage({ name, ok: false })
         );
-      };
-      const urlCurrency = qs.get('currency');
-      if (urlCurrency) {
-        campaignsFor(urlCurrency.toUpperCase());
-      } else if (window.nextConfig.currencyBehavior === 'auto') {
-        // Currency comes from geo; chain the campaigns fetch onto it. clone()
-        // keeps the geo body readable for the SDK's own consumption later.
-        pf.geo
-          .then(r => r.clone().json())
-          .then(g => {
-            if (g && g.currency) campaignsFor(g.currency);
-          })
-          .catch(() => {});
-      } else {
-        // Non-auto, no URL override: a fresh visitor resolves to USD. A
-        // returning visitor with a session-restored currency won't match and
-        // falls through — but they normally hit the campaign session cache
-        // and make no request at all.
-        campaignsFor('USD');
+        const geoP = json(I18N + '/v1/geo?include=rules,states&lang=' + lang);
+        post('geo', geoP);
+        post('countries', json(I18N + '/v1/countries?lang=' + lang));
+        post('messages', json(I18N + '/v1/locales/' + lang));
+        let currency = urlCurrency;
+        if (!currency && auto) { try { currency = (await geoP).currency; } catch (err) {} }
+        currency = currency || 'USD';
+        post('campaigns', json(
+          'https://campaigns.apps.29next.com/api/v1/campaigns/?currency=' + encodeURIComponent(currency),
+          { headers: { Authorization: apiKey } }
+        ).then(data => ({ currency, data })));
+      };`;
+      const worker = new Worker(
+        URL.createObjectURL(new Blob([workerSrc], { type: 'text/javascript' }))
+      );
+      const pf = (window.__nextPrefetch = { lang: 'en' });
+      const pending = {};
+      for (const name of ['geo', 'countries', 'messages', 'campaigns']) {
+        pf[name] = new Promise((resolveIt, rejectIt) => {
+          pending[name] = { resolveIt, rejectIt };
+        });
+        // A rejected prefetch the SDK never adopts must not surface as an
+        // unhandled rejection on the shopper's console.
+        pf[name].catch(() => {});
       }
+      worker.onmessage = e => {
+        const m = e.data;
+        const slot = pending[m.name];
+        if (!slot) return;
+        delete pending[m.name];
+        if (m.ok) slot.resolveIt(m.data);
+        else slot.rejectIt(new Error('prefetch failed'));
+        if (Object.keys(pending).length === 0) worker.terminate();
+      };
+      worker.postMessage({
+        apiKey: window.nextConfig.apiKey,
+        lang: 'en',
+        urlCurrency: (qs.get('currency') || '').toUpperCase() || null,
+        auto: window.nextConfig.currencyBehavior === 'auto',
+      });
     } catch (e) {
       window.__nextPrefetch = undefined;
     }
@@ -166,7 +185,7 @@
   // is injected at build time by the loader-preload-manifest plugin; in dev
   // (and any non-built copy) it stays empty and this loop is a no-op.
   if (!isDebug) {
-    const PRELOAD_LIST = ["chunks/core-services-DZknzj5t.js","chunks/api-xK3ZYeZs.js","chunks/index-BsOV1hnM.js","chunks/state-DcXLz7hR.js","chunks/vendor-hZBvDXAx.js","chunks/utils-B2aVJ-2W.js","chunks/debug-CyU8zyt8.js","chunks/analytics-DHJBNVWT.js"];
+    const PRELOAD_LIST = ["chunks/core-services-DZknzj5t.js","chunks/api-xK3ZYeZs.js","chunks/index-ia3eF31-.js","chunks/state-DsbHh5Jv.js","chunks/vendor-hZBvDXAx.js","chunks/utils-CyPRQK_F.js","chunks/debug-BMMTpZ2a.js","chunks/analytics-CpzUeiFk.js"];
     for (const chunkPath of PRELOAD_LIST) {
       const chunkLink = document.createElement('link');
       chunkLink.rel = 'modulepreload';

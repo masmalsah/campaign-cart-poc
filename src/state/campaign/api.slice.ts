@@ -152,21 +152,17 @@ export const createCampaignApiSlice: StateCreator<
       const prefetch = (
         window as {
           __nextPrefetch?: {
-            campaigns?: Promise<Response>;
-            campaignsCurrency?: string;
+            campaigns?: Promise<{ currency: string; data: Campaign }>;
           };
         }
       ).__nextPrefetch;
-      if (
-        prefetch?.campaigns &&
-        prefetch.campaignsCurrency === requestedCurrency
-      ) {
+      if (prefetch?.campaigns) {
         const inflight = prefetch.campaigns;
         prefetch.campaigns = undefined;
         try {
-          const response = await inflight;
-          if (response.ok) {
-            campaign = await response.json();
+          const result = await inflight;
+          if (result.currency === requestedCurrency) {
+            campaign = result.data;
             logger.info('Adopted loader-prefetched campaign response');
           }
         } catch {

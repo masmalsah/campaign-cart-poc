@@ -302,18 +302,18 @@ export async function fetchLocationData(
   const query = `lang=${encodeURIComponent(lang)}`;
   const geoUrl = `${baseUrl}/v1/geo?include=rules,states&${query}`;
 
-  // The loader may have started these three requests while the SDK modules
-  // were still downloading (window.__nextPrefetch). Each in-flight response
-  // is adopted only when the prefetch used the same host and lang; a missing
-  // promise, non-2xx or parse failure falls back to a fresh request. Promises
-  // are taken off the window first — a Response body is single-use.
+  // The loader's worker may have started these three requests while the SDK
+  // modules were still downloading (window.__nextPrefetch — promises of
+  // parsed JSON). Each is adopted only when the prefetch used the same host
+  // and lang; a missing promise or a rejected one falls back to a fresh
+  // request. Promises are taken off the window first — one consumer each.
   const prefetch = (
     window as {
       __nextPrefetch?: {
         lang?: string;
-        geo?: Promise<Response>;
-        countries?: Promise<Response>;
-        messages?: Promise<Response>;
+        geo?: Promise<unknown>;
+        countries?: Promise<unknown>;
+        messages?: Promise<unknown>;
       };
     }
   ).__nextPrefetch;
@@ -327,8 +327,7 @@ export async function fetchLocationData(
     if (inflight && prefetch) {
       prefetch[name] = undefined;
       try {
-        const response = await inflight;
-        if (response.ok) return (await response.json()) as T;
+        return (await inflight) as T;
       } catch {
         /* fall through to the fresh request */
       }
