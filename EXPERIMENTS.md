@@ -55,10 +55,57 @@ tags *not* blocked: v0.4.38 ready ≈ 7.8 s, v0.4.40 ≈ 6.8 s.
 4. v0.4.40 already loads ~1 s faster than v0.4.38 on this profile
    (287 KB vs 453 KB transferred).
 
-## Experiment C — loader-initiated API prefetch (in progress)
+## Experiment C — loader-initiated API prefetch
 
 Goal: overlap the `geo → campaigns` network time with module download and
-evaluation. Loader fires both fetches as soon as `window.nextConfig.apiKey`
-is readable; results are parked on `window.__nextPrefetch`; the campaign
-API slice consumes a matching in-flight promise before issuing its own
-request.
+evaluation. The loader fires the geo trio and the campaigns request as soon
+as `window.nextConfig.apiKey` is readable; results are parked on
+`window.__nextPrefetch`; the SDK adopts an in-flight result only when its
+resolved currency/lang match, else falls through to its normal request.
+
+| Variant (SHA) | `next-display-ready` |
+|---|---|
+| C1: main-thread prefetch (`d16e9878`) | 4.36 s — no gain over A |
+| C2: Web Worker prefetch (`d83b8c43`) | 4.34 s — no gain over A |
+| D: C2 + classic `async` loader tag (page-side) | 4.74 s |
+
+The adoption mechanism itself works: an unthrottled probe shows geo at
+1.0 s, campaigns at 1.2 s, and zero duplicate requests (the SDK adopted
+every prefetched response). Under 4× CPU throttle it never wins:
+
+- **C1:** module evaluation keeps the main thread in long tasks, so the
+  geo→campaigns promise chain starves until the SDK is booted anyway.
+- **C2:** the worker thread is throttled too and its startup/dispatch is
+  starved the same way — fetches dispatch ~2.7 s after worker creation.
+- **D:** `type="module"` had been deferring the loader until HTML parsing
+  finished (~2.4 s); a classic `async` tag runs it at ~0.55 s and pulls
+  `index.js` from 2.5 s to 0.53 s — but ready got slightly *worse*: the
+  early SDK download competes with the page's own HTML/CSS for the
+  throttled link, delaying the parse that `waitForDOM` gates boot on.
+
+### Structural findings
+
+1. **The loader runs ~2 s later than it could.** Templates load it with
+   `type="module"`, deferring execution until HTML parse completes. The
+   loader is a plain IIFE; a classic `async` tag runs it at ~0.55 s. On its
+   own this reshuffles rather than wins (see D), but it is the precondition
+   for any loader-side head start.
+2. **After Experiment A, the floor is not the network.** It is HTML parse
+   (`waitForDOM` gates boot) → module evaluation → the sequential
+   `campaigns → calculate` chain → DOM enhance, all on a throttled main
+   thread.
+3. **Emulated 4× CPU throttle penalizes workers and promise chains alike**,
+   which may overstate the starvation vs real mid-range hardware. The
+   prefetch mechanism (built, safe, fall-through on mismatch) should be
+   re-measured on a physical device before being written off.
+
+### Open levers
+
+- Dispatch the prefetch without any chaining: guess the currency from
+  `navigator.language` in the loader (country→currency table for the
+  common cases) and fire campaigns at 0.55 s; geo confirms later; a wrong
+  guess costs one wasted request and falls through — same safety contract.
+- Origin-side edge caching (campaigns-app#575 proper) shortens the same
+  calls for every integration shape without any scheduling fight.
+- Re-run C2/D on real hardware (mid-range Android) to check how much of the
+  starvation is an artifact of CDP throttling.
