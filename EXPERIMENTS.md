@@ -99,6 +99,25 @@ every prefetched response). Under 4× CPU throttle it never wins:
    prefetch mechanism (built, safe, fall-through on mismatch) should be
    re-measured on a physical device before being written off.
 
+### Real-device validation (Pixel 4a 5G, 2026-09-30)
+
+Same page, same network throttle (150 ms RTT / 1.6 Mbps via CDP), real
+Chrome on a physical Pixel 4a 5G (Snapdragon 765G) over adb, no CPU
+throttle, cold HTTP cache per run, 3 runs, medians:
+
+| Variant | First `/campaigns/` | `next-display-ready` |
+|---|---|---|
+| Baseline (`39f806a2`) | 3.66 s | **5.46 s** |
+| A: static modulepreload (`0b57fd98`) | 3.34 s | **4.69 s** (−0.77 s, −14%) |
+| C2: + worker prefetch (`d83b8c43`) | 3.30 s | 4.77 s (no gain over A) |
+| D: + classic `async` loader tag | 3.58 s | 4.96 s (noisy; no gain) |
+
+The real device is *slower* than the emulated profile (5.46 s vs 4.81 s
+baseline) and confirms every emulated verdict: Experiment A's gain is real
+and larger on device; the worker prefetch adds nothing even on real
+multi-core silicon, so the main-thread/evaluation floor is not a throttling
+artifact.
+
 ### Open levers
 
 - Dispatch the prefetch without any chaining: guess the currency from
