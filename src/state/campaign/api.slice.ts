@@ -11,6 +11,7 @@ import type {
   CampaignStore,
   CachedCampaignData,
 } from './campaign.types';
+import type { Campaign } from '@/types/campaign';
 
 const CACHE_EXPIRY_MS = 10 * 60 * 1000; // 10 minutes
 
@@ -142,9 +143,42 @@ export const createCampaignApiSlice: StateCreator<
         `Fetching campaign data from API with currency: ${requestedCurrency}...`
       );
 
-      const { getApiClient } = await import('@/client');
-      const client = getApiClient(apiKey);
-      const campaign = await client.getCampaigns(requestedCurrency);
+      // The loader may have started this exact request while the SDK modules
+      // were still downloading (window.__nextPrefetch). Adopt it only when the
+      // prefetched currency matches the one resolved here; any mismatch,
+      // non-2xx or parse failure falls through to the normal request. The
+      // promise is taken off the window first — a Response body is single-use.
+      let campaign: Campaign | null = null;
+      const prefetch = (
+        window as {
+          __nextPrefetch?: {
+            campaigns?: Promise<Response>;
+            campaignsCurrency?: string;
+          };
+        }
+      ).__nextPrefetch;
+      if (
+        prefetch?.campaigns &&
+        prefetch.campaignsCurrency === requestedCurrency
+      ) {
+        const inflight = prefetch.campaigns;
+        prefetch.campaigns = undefined;
+        try {
+          const response = await inflight;
+          if (response.ok) {
+            campaign = await response.json();
+            logger.info('Adopted loader-prefetched campaign response');
+          }
+        } catch {
+          campaign = null;
+        }
+      }
+
+      if (!campaign) {
+        const { getApiClient } = await import('@/client');
+        const client = getApiClient(apiKey);
+        campaign = await client.getCampaigns(requestedCurrency);
+      }
 
       if (!campaign) {
         throw new Error('Campaign data not found');

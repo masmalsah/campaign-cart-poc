@@ -87,6 +87,56 @@
     }
   }
 
+  // Prefetch the boot-critical API responses while the SDK modules download.
+  // The SDK only adopts an in-flight response when its own resolved inputs
+  // (currency, lang) match what was prefetched — on any mismatch or error it
+  // falls through to its normal request, so this can waste a request but
+  // never change behavior. Requires window.nextConfig to be set before the
+  // loader runs (the data-config-url path arrives too late to prefetch).
+  if (!isDebug && window.nextConfig && window.nextConfig.apiKey) {
+    try {
+      const pf = (window.__nextPrefetch = {});
+      const I18N_HOST = 'https://i18n-rules.nextcommerce.com';
+      const lang = 'en';
+      pf.lang = lang;
+      pf.geo = fetch(`${I18N_HOST}/v1/geo?include=rules,states&lang=${lang}`);
+      pf.countries = fetch(`${I18N_HOST}/v1/countries?lang=${lang}`);
+      pf.messages = fetch(`${I18N_HOST}/v1/locales/${lang}`);
+
+      const campaignsFor = currency => {
+        pf.campaignsCurrency = currency || '';
+        const search = currency
+          ? `?currency=${encodeURIComponent(currency)}`
+          : '';
+        pf.campaigns = fetch(
+          `https://campaigns.apps.29next.com/api/v1/campaigns/${search}`,
+          { headers: { Authorization: window.nextConfig.apiKey } }
+        );
+      };
+      const urlCurrency = qs.get('currency');
+      if (urlCurrency) {
+        campaignsFor(urlCurrency.toUpperCase());
+      } else if (window.nextConfig.currencyBehavior === 'auto') {
+        // Currency comes from geo; chain the campaigns fetch onto it. clone()
+        // keeps the geo body readable for the SDK's own consumption later.
+        pf.geo
+          .then(r => r.clone().json())
+          .then(g => {
+            if (g && g.currency) campaignsFor(g.currency);
+          })
+          .catch(() => {});
+      } else {
+        // Non-auto, no URL override: a fresh visitor resolves to USD. A
+        // returning visitor with a session-restored currency won't match and
+        // falls through — but they normally hit the campaign session cache
+        // and make no request at all.
+        campaignsFor('USD');
+      }
+    } catch (e) {
+      window.__nextPrefetch = undefined;
+    }
+  }
+
   // Preconnect to Spreedly for faster checkout loading
   if (!isDebug) {
     const spreedlyPreconnect = document.createElement('link');

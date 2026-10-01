@@ -301,10 +301,54 @@ export async function fetchLocationData(
 ): Promise<LocationData> {
   const query = `lang=${encodeURIComponent(lang)}`;
   const geoUrl = `${baseUrl}/v1/geo?include=rules,states&${query}`;
+
+  // The loader may have started these three requests while the SDK modules
+  // were still downloading (window.__nextPrefetch). Each in-flight response
+  // is adopted only when the prefetch used the same host and lang; a missing
+  // promise, non-2xx or parse failure falls back to a fresh request. Promises
+  // are taken off the window first — a Response body is single-use.
+  const prefetch = (
+    window as {
+      __nextPrefetch?: {
+        lang?: string;
+        geo?: Promise<Response>;
+        countries?: Promise<Response>;
+        messages?: Promise<Response>;
+      };
+    }
+  ).__nextPrefetch;
+  const adoptable =
+    prefetch && baseUrl === NEXT_ADDRESS_BASE_URL && prefetch.lang === lang;
+  const adopt = async <T>(
+    name: 'geo' | 'countries' | 'messages',
+    fresh: () => Promise<T>
+  ): Promise<T> => {
+    const inflight = adoptable && prefetch ? prefetch[name] : undefined;
+    if (inflight && prefetch) {
+      prefetch[name] = undefined;
+      try {
+        const response = await inflight;
+        if (response.ok) return (await response.json()) as T;
+      } catch {
+        /* fall through to the fresh request */
+      }
+    }
+    return fresh();
+  };
+
   const [geo, countries, messages] = await Promise.all([
-    getJson<GeoResponse>(geoUrl),
-    getJson<CountryRow[]>(`${baseUrl}/v1/countries?${query}`),
-    fetchMessages(baseUrl, lang),
+    adopt<GeoResponse>('geo', () => getJson<GeoResponse>(geoUrl)),
+    adopt<CountryRow[]>('countries', () =>
+      getJson<CountryRow[]>(`${baseUrl}/v1/countries?${query}`)
+    ),
+    adopt<unknown>('messages', () =>
+      getJson<unknown>(`${baseUrl}/v1/locales/${encodeURIComponent(lang)}`)
+    ).then(
+      raw => flattenTexts(raw),
+      // Same contract as fetchMessages: messages are optional, errors mean
+      // "none" rather than a failed boot.
+      () => undefined
+    ),
   ]);
   const rules = readCountryRules(geo.rules, geoUrl);
 

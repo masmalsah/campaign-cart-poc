@@ -87,6 +87,56 @@
     }
   }
 
+  // Prefetch the boot-critical API responses while the SDK modules download.
+  // The SDK only adopts an in-flight response when its own resolved inputs
+  // (currency, lang) match what was prefetched — on any mismatch or error it
+  // falls through to its normal request, so this can waste a request but
+  // never change behavior. Requires window.nextConfig to be set before the
+  // loader runs (the data-config-url path arrives too late to prefetch).
+  if (!isDebug && window.nextConfig && window.nextConfig.apiKey) {
+    try {
+      const pf = (window.__nextPrefetch = {});
+      const I18N_HOST = 'https://i18n-rules.nextcommerce.com';
+      const lang = 'en';
+      pf.lang = lang;
+      pf.geo = fetch(`${I18N_HOST}/v1/geo?include=rules,states&lang=${lang}`);
+      pf.countries = fetch(`${I18N_HOST}/v1/countries?lang=${lang}`);
+      pf.messages = fetch(`${I18N_HOST}/v1/locales/${lang}`);
+
+      const campaignsFor = currency => {
+        pf.campaignsCurrency = currency || '';
+        const search = currency
+          ? `?currency=${encodeURIComponent(currency)}`
+          : '';
+        pf.campaigns = fetch(
+          `https://campaigns.apps.29next.com/api/v1/campaigns/${search}`,
+          { headers: { Authorization: window.nextConfig.apiKey } }
+        );
+      };
+      const urlCurrency = qs.get('currency');
+      if (urlCurrency) {
+        campaignsFor(urlCurrency.toUpperCase());
+      } else if (window.nextConfig.currencyBehavior === 'auto') {
+        // Currency comes from geo; chain the campaigns fetch onto it. clone()
+        // keeps the geo body readable for the SDK's own consumption later.
+        pf.geo
+          .then(r => r.clone().json())
+          .then(g => {
+            if (g && g.currency) campaignsFor(g.currency);
+          })
+          .catch(() => {});
+      } else {
+        // Non-auto, no URL override: a fresh visitor resolves to USD. A
+        // returning visitor with a session-restored currency won't match and
+        // falls through — but they normally hit the campaign session cache
+        // and make no request at all.
+        campaignsFor('USD');
+      }
+    } catch (e) {
+      window.__nextPrefetch = undefined;
+    }
+  }
+
   // Preconnect to Spreedly for faster checkout loading
   if (!isDebug) {
     const spreedlyPreconnect = document.createElement('link');
@@ -116,7 +166,7 @@
   // is injected at build time by the loader-preload-manifest plugin; in dev
   // (and any non-built copy) it stays empty and this loop is a no-op.
   if (!isDebug) {
-    const PRELOAD_LIST = ["chunks/api-xK3ZYeZs.js","chunks/index-BWgu7QPI.js","chunks/state-DzVth2GG.js","chunks/core-services-DZknzj5t.js","chunks/analytics-DFA0bvbc.js","chunks/vendor-hZBvDXAx.js","chunks/debug-bDdzhmgA.js","chunks/utils-BqmDVq00.js","chunks/index-DPfnWgZh.js","chunks/index-Bn9zjGXK.js","chunks/index-B1Kye_JI.js","chunks/index-C0S3pFtC.js","chunks/index-YD6HZVwI.js","chunks/index-BFF4YzFz.js","chunks/index-BN6P7zKe.js","chunks/index-Gbn1TPho.js","chunks/index-DC6W8g4h.js","chunks/index-BMmvProV.js","chunks/index-C-sT_h_d.js","chunks/attribution-collector-BKIpVW_U.js","chunks/index-CQXGrfBL.js","chunks/index-DvP4oh1U.js","chunks/index-D1mSZThG.js","chunks/index-DA5M9gtl.js","chunks/base-display-enhancer-Df7Hgb0O.js","chunks/base-enhancer-BSOaz2sm.js","chunks/template-renderer-DgN1wHUk.js","chunks/base-action-enhancer-BnrSIuwy.js","chunks/order-manager-cCL2kEj3.js","chunks/loading-overlay-DItlnQT5.js","chunks/general-modal-Dk0ZQi9O.js","chunks/quantity-controls-BttiFA_P.js","chunks/properties-DPXi39EP.js","chunks/base-cart-enhancer-ska3bMP1.js","chunks/package-context-resolver-BG04Ewaa.js","chunks/discount-renderer-G2zs3Vmz.js","chunks/price-calculator-BBD-aMyq.js","chunks/error-handler-CS1bu0DW.js","chunks/index-CTK8N__O.js","chunks/index-Bx2firUi.js"];
+    const PRELOAD_LIST = ["chunks/core-services-DZknzj5t.js","chunks/api-xK3ZYeZs.js","chunks/index-BsOV1hnM.js","chunks/state-DcXLz7hR.js","chunks/vendor-hZBvDXAx.js","chunks/utils-B2aVJ-2W.js","chunks/debug-CyU8zyt8.js","chunks/analytics-DHJBNVWT.js"];
     for (const chunkPath of PRELOAD_LIST) {
       const chunkLink = document.createElement('link');
       chunkLink.rel = 'modulepreload';
