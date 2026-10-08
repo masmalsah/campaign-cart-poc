@@ -36,8 +36,9 @@ the campaign/calculate calls earlier.
 - Live API calls are reads only: `GET /campaigns/` and the stateless
   `POST /carts/calculate/`. No carts or orders are created.
 
-Harness: `measure.mjs` (Playwright + CDP), kept in the session scratchpad;
-copy lives with whoever reruns this. Stock-SDK reference numbers, same rig,
+Harness: `scripts/measure-init-latency.mjs` (emulated) and
+`scripts/measure-init-latency-device.mjs` (real Android over adb); setup and
+method in `docs/init-latency-harness.md`. Stock-SDK reference numbers, same rig,
 tags *not* blocked: v0.4.38 ready ≈ 7.8 s, v0.4.40 ≈ 6.8 s.
 
 ## Results
