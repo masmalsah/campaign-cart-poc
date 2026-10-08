@@ -35,7 +35,10 @@ export function parseArgs(argv, defaults) {
     process.exit(0);
   }
 
-  const base = String(flags.base ?? process.env.BASE ?? defaults.base).replace(/\/$/, '');
+  const base = String(flags.base ?? process.env.BASE ?? defaults.base).replace(
+    /\/$/,
+    ''
+  );
   const runs = Number(flags.runs ?? process.env.RUNS ?? defaults.runs);
   const timeout = Number(flags.timeout ?? defaults.timeout);
   const query = String(flags.query ?? defaults.query);
@@ -44,11 +47,14 @@ export function parseArgs(argv, defaults) {
   const spec = flags.variants ?? process.env.VARIANTS;
   if (spec) variants = parseVariants(String(spec));
 
-  if (!Number.isFinite(runs) || runs < 1) fail(`--runs must be a positive number, got ${flags.runs}`);
+  if (!Number.isFinite(runs) || runs < 1)
+    fail(`--runs must be a positive number, got ${flags.runs}`);
   if (!variants.length) fail('no variants given');
   for (const v of variants) {
-    if (!v.name || !v.path) fail(`variant needs name and path: ${JSON.stringify(v)}`);
-    if (!v.path.startsWith('/')) fail(`variant path must start with "/": ${v.path}`);
+    if (!v.name || !v.path)
+      fail(`variant needs name and path: ${JSON.stringify(v)}`);
+    if (!v.path.startsWith('/'))
+      fail(`variant path must start with "/": ${v.path}`);
   }
   return { base, runs, timeout, query, variants };
 }
@@ -67,7 +73,10 @@ function parseVariants(spec) {
     .map(pair => {
       const eq = pair.indexOf('=');
       if (eq < 0) fail(`variant "${pair}" is not name=path`);
-      return { name: pair.slice(0, eq).trim(), path: pair.slice(eq + 1).trim() };
+      return {
+        name: pair.slice(0, eq).trim(),
+        path: pair.slice(eq + 1).trim(),
+      };
     });
 }
 

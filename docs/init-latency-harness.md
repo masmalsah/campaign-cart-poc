@@ -4,10 +4,10 @@ The measurement rig behind the numbers in [EXPERIMENTS.md](../EXPERIMENTS.md) an
 [campaigns-app#575](https://github.com/NextCommerceCo/campaigns-app/issues/575). Two scripts,
 same method:
 
-| Script | Runs on | CPU | Use for |
-|---|---|---|---|
-| `scripts/measure-init-latency.mjs` | Desktop Chromium (Playwright) | 4x throttled | Quick, repeatable, directional |
-| `scripts/measure-init-latency-device.mjs` | Real Android Chrome over adb | Not throttled | The number to quote |
+| Script                                    | Runs on                       | CPU           | Use for                        |
+| ----------------------------------------- | ----------------------------- | ------------- | ------------------------------ |
+| `scripts/measure-init-latency.mjs`        | Desktop Chromium (Playwright) | 4x throttled  | Quick, repeatable, directional |
+| `scripts/measure-init-latency-device.mjs` | Real Android Chrome over adb  | Not throttled | The number to quote            |
 
 Both print one JSON line per run to stdout. Report the **median of 3 runs** per variant.
 
@@ -45,6 +45,7 @@ comparable with everyone else's.
    `<siteroot>/silver-sheets/`. Check the page's `config.js` and CSS load with 200s before
    measuring. A wrong mount is silent: the page renders, `window.nextConfig` is missing, and
    every number is wrong. That mistake cost us a day; see the erratum in EXPERIMENTS.md.
+
 3. One folder per variant, each pointing its loader tag at a different SDK build, for example
    `https://cdn.jsdelivr.net/gh/<owner>/<repo>@<sha>/dist/loader.js`.
 4. **Warm the CDN first.** A new SHA means every chunk URL is cold on jsDelivr, and a cold run
@@ -78,9 +79,19 @@ and `BASE` environment variables work too; flags win.
 Desktop line:
 
 ```json
-{"variant":"baseline@39f806a2","run":2,"loaderEnd_ms":547,"sdkFiles":45,"sdkKB":289,
- "sdkLastEnd_ms":6669,"firstApiStart_ms":5492,"campaigns":[5492,5827],
- "calculate":[6035,6204],"ready_ms":6672,"errors":[]}
+{
+  "variant": "baseline@39f806a2",
+  "run": 2,
+  "loaderEnd_ms": 547,
+  "sdkFiles": 45,
+  "sdkKB": 289,
+  "sdkLastEnd_ms": 6669,
+  "firstApiStart_ms": 5492,
+  "campaigns": [5492, 5827],
+  "calculate": [6035, 6204],
+  "ready_ms": 6672,
+  "errors": []
+}
 ```
 
 - `loaderEnd_ms`: `loader.js` finished downloading.

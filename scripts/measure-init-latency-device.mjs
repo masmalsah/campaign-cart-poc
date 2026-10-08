@@ -21,28 +21,47 @@ import { execFileSync } from 'node:child_process';
 import { _android as android } from 'playwright';
 import { parseArgs } from './harness-args.mjs';
 
-const { base: BASE, runs: RUNS, timeout: READY_TIMEOUT, query: QUERY, variants: VARIANTS } = parseArgs(
-  process.argv.slice(2),
-  {
-    base: 'http://127.0.0.1:8899',
-    runs: 3,
-    timeout: 45000,
-    query: 'ignore=true',
-    variants: [
-      { name: 'device-baseline@39f806a2', path: '/silver-sheets/checkout-poc/' },
-      { name: 'device-exp-a@0b57fd98', path: '/silver-sheets/checkout-exp-a/' },
-      { name: 'device-exp-c2@d83b8c43', path: '/silver-sheets/checkout-exp-c2/' },
-      { name: 'device-exp-d-async@d83b8c43', path: '/silver-sheets/checkout-exp-d/' },
-    ],
-  }
-);
+const {
+  base: BASE,
+  runs: RUNS,
+  timeout: READY_TIMEOUT,
+  query: QUERY,
+  variants: VARIANTS,
+} = parseArgs(process.argv.slice(2), {
+  base: 'http://127.0.0.1:8899',
+  runs: 3,
+  timeout: 45000,
+  query: 'ignore=true',
+  variants: [
+    { name: 'device-baseline@39f806a2', path: '/silver-sheets/checkout-poc/' },
+    { name: 'device-exp-a@0b57fd98', path: '/silver-sheets/checkout-exp-a/' },
+    { name: 'device-exp-c2@d83b8c43', path: '/silver-sheets/checkout-exp-c2/' },
+    {
+      name: 'device-exp-d-async@d83b8c43',
+      path: '/silver-sheets/checkout-exp-d/',
+    },
+  ],
+});
 
 // --- Fixed measurement constants. Change these and results stop being comparable. ---
-const NETWORK = { offline: false, latency: 150, downloadThroughput: (1.6 * 1024 * 1024) / 8, uploadThroughput: (768 * 1024) / 8 };
+const NETWORK = {
+  offline: false,
+  latency: 150,
+  downloadThroughput: (1.6 * 1024 * 1024) / 8,
+  uploadThroughput: (768 * 1024) / 8,
+};
 const BLOCKED = [
-  'googletagmanager.com', 'google-analytics.com', 'analytics.google.com', 'doubleclick.net',
-  'google.ca', 'google.com/ads', 'convertexperiments.com', 'sd2rew.com',
-  'datadoghq-browser-agent.com', 'facebook.net', 'facebook.com',
+  'googletagmanager.com',
+  'google-analytics.com',
+  'analytics.google.com',
+  'doubleclick.net',
+  'google.ca',
+  'google.com/ads',
+  'convertexperiments.com',
+  'sd2rew.com',
+  'datadoghq-browser-agent.com',
+  'facebook.net',
+  'facebook.com',
 ];
 const SDK_HOST = 'jsdelivr';
 const API_HOST = 'campaigns.apps.29next.com';
@@ -52,9 +71,13 @@ const round = n => (n == null ? null : Math.round(n));
 // The phone must reach the Mac's server at the same host:port as --base.
 const port = new URL(BASE).port || '80';
 try {
-  execFileSync('adb', ['reverse', `tcp:${port}`, `tcp:${port}`], { stdio: 'ignore' });
+  execFileSync('adb', ['reverse', `tcp:${port}`, `tcp:${port}`], {
+    stdio: 'ignore',
+  });
 } catch {
-  console.error(`adb reverse tcp:${port} failed. Is adb on PATH and the phone authorised?`);
+  console.error(
+    `adb reverse tcp:${port} failed. Is adb on PATH and the phone authorised?`
+  );
   process.exit(1);
 }
 
@@ -71,7 +94,9 @@ for (const variant of VARIANTS) {
     const context = await device.launchBrowser();
     const page = await context.newPage();
     await page.route('**/*', route =>
-      BLOCKED.some(h => route.request().url().includes(h)) ? route.abort() : route.continue()
+      BLOCKED.some(h => route.request().url().includes(h))
+        ? route.abort()
+        : route.continue()
     );
     const cdp = await context.newCDPSession(page);
     await cdp.send('Network.enable');
@@ -92,7 +117,11 @@ for (const variant of VARIANTS) {
         if (check()) mo.disconnect();
       });
       document.addEventListener('DOMContentLoaded', () => {
-        if (!check()) mo.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
+        if (!check())
+          mo.observe(document.documentElement, {
+            attributes: true,
+            attributeFilter: ['class'],
+          });
       });
     });
 
@@ -102,7 +131,9 @@ for (const variant of VARIANTS) {
     });
     let ready = null;
     try {
-      await page.waitForFunction(() => window.__readyAt !== null, null, { timeout: READY_TIMEOUT });
+      await page.waitForFunction(() => window.__readyAt !== null, null, {
+        timeout: READY_TIMEOUT,
+      });
       ready = await page.evaluate(() => window.__readyAt);
     } catch {
       /* ready never fired; reported as null */
@@ -113,7 +144,9 @@ for (const variant of VARIANTS) {
         const res = performance.getEntriesByType('resource');
         const sdk = res.filter(r => r.name.includes(SDK_HOST));
         const loader = sdk.find(r => r.name.includes('loader.js'));
-        const api = res.filter(r => r.name.includes(API_HOST)).sort((a, b) => a.startTime - b.startTime);
+        const api = res
+          .filter(r => r.name.includes(API_HOST))
+          .sort((a, b) => a.startTime - b.startTime);
         return {
           loaderEnd: loader?.responseEnd,
           sdkFiles: sdk.length,

@@ -16,31 +16,47 @@
 import { chromium } from 'playwright';
 import { parseArgs } from './harness-args.mjs';
 
-const { base: BASE, runs: RUNS, timeout: READY_TIMEOUT, query: QUERY, variants: VARIANTS } = parseArgs(
-  process.argv.slice(2),
-  {
-    base: 'http://127.0.0.1:8899',
-    runs: 3,
-    timeout: 45000,
-    query: 'ignore=true',
-    // The corrected-rig set from EXPERIMENTS.md: the velin silver-sheets
-    // checkout copy served mounted at /silver-sheets/, one folder per SDK SHA.
-    variants: [
-      { name: 'baseline@39f806a2', path: '/silver-sheets/checkout-poc/' },
-      { name: 'exp-a@0b57fd98', path: '/silver-sheets/checkout-exp-a/' },
-      { name: 'exp-b@2ab9dc70', path: '/silver-sheets/checkout-exp-b/' },
-      { name: 'exp-c2@d83b8c43', path: '/silver-sheets/checkout-exp-c2/' },
-    ],
-  }
-);
+const {
+  base: BASE,
+  runs: RUNS,
+  timeout: READY_TIMEOUT,
+  query: QUERY,
+  variants: VARIANTS,
+} = parseArgs(process.argv.slice(2), {
+  base: 'http://127.0.0.1:8899',
+  runs: 3,
+  timeout: 45000,
+  query: 'ignore=true',
+  // The corrected-rig set from EXPERIMENTS.md: the velin silver-sheets
+  // checkout copy served mounted at /silver-sheets/, one folder per SDK SHA.
+  variants: [
+    { name: 'baseline@39f806a2', path: '/silver-sheets/checkout-poc/' },
+    { name: 'exp-a@0b57fd98', path: '/silver-sheets/checkout-exp-a/' },
+    { name: 'exp-b@2ab9dc70', path: '/silver-sheets/checkout-exp-b/' },
+    { name: 'exp-c2@d83b8c43', path: '/silver-sheets/checkout-exp-c2/' },
+  ],
+});
 
 // --- Fixed measurement constants. Change these and results stop being comparable. ---
-const NETWORK = { offline: false, latency: 150, downloadThroughput: (1.6 * 1024 * 1024) / 8, uploadThroughput: (768 * 1024) / 8 };
+const NETWORK = {
+  offline: false,
+  latency: 150,
+  downloadThroughput: (1.6 * 1024 * 1024) / 8,
+  uploadThroughput: (768 * 1024) / 8,
+};
 const CPU_RATE = 4;
 const BLOCKED = [
-  'googletagmanager.com', 'google-analytics.com', 'analytics.google.com', 'doubleclick.net',
-  'google.ca', 'google.com/ads', 'convertexperiments.com', 'sd2rew.com',
-  'datadoghq-browser-agent.com', 'facebook.net', 'facebook.com',
+  'googletagmanager.com',
+  'google-analytics.com',
+  'analytics.google.com',
+  'doubleclick.net',
+  'google.ca',
+  'google.com/ads',
+  'convertexperiments.com',
+  'sd2rew.com',
+  'datadoghq-browser-agent.com',
+  'facebook.net',
+  'facebook.com',
 ];
 const SDK_HOST = 'jsdelivr';
 const API_HOST = 'campaigns.apps.29next.com';
@@ -58,7 +74,9 @@ async function runOnce(variant) {
   });
   const page = await context.newPage();
   await page.route('**/*', route =>
-    BLOCKED.some(h => route.request().url().includes(h)) ? route.abort() : route.continue()
+    BLOCKED.some(h => route.request().url().includes(h))
+      ? route.abort()
+      : route.continue()
   );
   const cdp = await context.newCDPSession(page);
   await cdp.send('Network.enable');
@@ -78,7 +96,11 @@ async function runOnce(variant) {
       if (check()) mo.disconnect();
     });
     document.addEventListener('DOMContentLoaded', () => {
-      if (!check()) mo.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
+      if (!check())
+        mo.observe(document.documentElement, {
+          attributes: true,
+          attributeFilter: ['class'],
+        });
     });
   });
 
@@ -91,7 +113,9 @@ async function runOnce(variant) {
   });
   let ready = null;
   try {
-    await page.waitForFunction(() => window.__readyAt !== null, null, { timeout: READY_TIMEOUT });
+    await page.waitForFunction(() => window.__readyAt !== null, null, {
+      timeout: READY_TIMEOUT,
+    });
     ready = await page.evaluate(() => window.__readyAt);
   } catch {
     /* ready never fired; reported as null */
@@ -107,7 +131,9 @@ async function runOnce(variant) {
       }));
       const sdk = res.filter(r => r.url.includes(SDK_HOST));
       const loader = sdk.find(r => r.url.includes('loader.js'));
-      const api = res.filter(r => r.url.includes(API_HOST)).sort((a, b) => a.start - b.start);
+      const api = res
+        .filter(r => r.url.includes(API_HOST))
+        .sort((a, b) => a.start - b.start);
       const pick = frag => api.find(r => r.url.includes(frag));
       return {
         loaderEnd: loader?.end,
