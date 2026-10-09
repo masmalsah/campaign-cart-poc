@@ -185,7 +185,7 @@
   // is injected at build time by the loader-preload-manifest plugin; in dev
   // (and any non-built copy) it stays empty and this loop is a no-op.
   if (!isDebug) {
-    const PRELOAD_LIST = ["chunks/core-services-DZknzj5t.js","chunks/api-xK3ZYeZs.js","chunks/index-ia3eF31-.js","chunks/state-DsbHh5Jv.js","chunks/vendor-hZBvDXAx.js","chunks/utils-CyPRQK_F.js","chunks/debug-BMMTpZ2a.js","chunks/analytics-CpzUeiFk.js"];
+    const PRELOAD_LIST = ["chunks/core-services-DZknzj5t.js","chunks/api-xK3ZYeZs.js","chunks/index-Ct5kaAL1.js","chunks/state-Dap655a6.js","chunks/vendor-hZBvDXAx.js","chunks/utils-Dqo0wxog.js","chunks/i18n-CVAJL01V.js"];
     for (const chunkPath of PRELOAD_LIST) {
       const chunkLink = document.createElement('link');
       chunkLink.rel = 'modulepreload';

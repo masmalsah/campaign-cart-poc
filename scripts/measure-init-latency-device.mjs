@@ -103,6 +103,9 @@ for (const variant of VARIANTS) {
     await cdp.send('Network.clearBrowserCache');
     await cdp.send('Network.setCacheDisabled', { cacheDisabled: true });
     await cdp.send('Network.emulateNetworkConditions', NETWORK);
+    // Main-thread cost and memory on real silicon, read at ready
+    // (campaigns-app#615: ScriptDuration, TaskDuration, JSHeapUsedSize).
+    await cdp.send('Performance.enable');
 
     await page.addInitScript(() => {
       window.__readyAt = null;
@@ -138,6 +141,7 @@ for (const variant of VARIANTS) {
     } catch {
       /* ready never fired; reported as null */
     }
+    const metrics = await readMetrics(cdp);
 
     const data = await page.evaluate(
       ({ SDK_HOST, API_HOST }) => {
@@ -165,9 +169,29 @@ for (const variant of VARIANTS) {
         sdkFiles: data.sdkFiles,
         firstApiStart_ms: round(data.firstApiStart),
         ready_ms: round(ready),
+        script_ms: round(metrics.scriptMs),
+        task_ms: round(metrics.taskMs),
+        heap_kb: round(metrics.heapKB),
       })
     );
     await context.close();
   }
 }
 await device.close();
+
+// CDP Performance.getMetrics at the moment ready fires (or at timeout).
+// ScriptDuration and TaskDuration are seconds since Performance.enable;
+// JSHeapUsedSize is bytes.
+async function readMetrics(cdp) {
+  try {
+    const { metrics } = await cdp.send('Performance.getMetrics');
+    const get = name => metrics.find(m => m.name === name)?.value;
+    return {
+      scriptMs: get('ScriptDuration') * 1000,
+      taskMs: get('TaskDuration') * 1000,
+      heapKB: get('JSHeapUsedSize') / 1024,
+    };
+  } catch {
+    return { scriptMs: null, taskMs: null, heapKB: null };
+  }
+}

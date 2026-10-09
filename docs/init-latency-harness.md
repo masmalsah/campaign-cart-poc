@@ -90,6 +90,9 @@ Desktop line:
   "campaigns": [5492, 5827],
   "calculate": [6035, 6204],
   "ready_ms": 6672,
+  "script_ms": 1840,
+  "task_ms": 2410,
+  "heap_kb": 9876,
   "errors": []
 }
 ```
@@ -104,10 +107,15 @@ Desktop line:
   the call never happened (the SDK caches location for an hour and campaigns for ten minutes,
   and the experiment C2 loader prefetch replaces the page's own `/campaigns/` call).
 - `ready_ms`: the number. `null` means ready never fired inside `--timeout`.
+- `script_ms`, `task_ms`, `heap_kb`: Chrome's `ScriptDuration`, `TaskDuration` and
+  `JSHeapUsedSize` (CDP `Performance.getMetrics`) read the moment ready fires, or at timeout.
+  Script and task time are main-thread totals since navigation; heap is live JS memory. On the
+  desktop rig the two durations are inflated by the 4x CPU throttle; quote the device figures.
 - `errors`: first three uncaught page errors. "Failed to fetch dynamically imported module" on
   a jsDelivr URL means the CDN edge was cold or the SHA is wrong; rerun.
 
-The device line carries only `loaderEnd_ms`, `sdkFiles`, `firstApiStart_ms` and `ready_ms`.
+The device line carries `loaderEnd_ms`, `sdkFiles`, `firstApiStart_ms`, `ready_ms`, `script_ms`,
+`task_ms` and `heap_kb`.
 
 ## Caveats
 

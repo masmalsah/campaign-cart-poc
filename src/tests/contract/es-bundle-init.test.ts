@@ -170,6 +170,7 @@ const NAMED_CHUNKS = new Set([
   'api',
   'core-services',
   'vendor',
+  'i18n',
 ]);
 
 /** `debug-CqP2tos2.js` → `debug`. The hash is 8 chars of `[A-Za-z0-9_-]`. */
@@ -220,13 +221,20 @@ function namedChunkGraph(chunks: string[]): Record<string, string[]> {
  * it: a **new** edge into `analytics`/`debug`/`state`/`utils` widens an existing
  * cycle, and an edge out of `core-services` or `vendor` (both leaves today) is a new
  * cycle outright. An edge that disappears is progress and the map should shrink.
+ *
+ * campaigns-app#615 step 1 removed the `analytics → debug` and `state → debug`
+ * edges: nothing on the shopper path imports `debug` now, so a plain page never
+ * requests it. The country service and currency formatter that caused those
+ * edges live in `i18n`, which keeps the two-way edge with `state` that `debug`
+ * used to carry (`enriched-lines.ts` ↔ `currency-formatter.ts`).
  */
 const FROZEN_CHUNK_GRAPH: Record<string, string[]> = {
-  analytics: ['core-services', 'debug', 'state', 'utils'],
+  analytics: ['core-services', 'state', 'utils'],
   api: ['core-services'],
   'core-services': [],
-  debug: ['analytics', 'core-services', 'state', 'vendor'],
-  state: ['core-services', 'debug', 'utils', 'vendor'],
+  debug: ['analytics', 'core-services', 'i18n', 'state', 'vendor'],
+  i18n: ['core-services', 'state'],
+  state: ['core-services', 'i18n', 'utils', 'vendor'],
   utils: ['core-services', 'state'],
   vendor: [],
 };

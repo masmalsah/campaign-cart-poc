@@ -380,13 +380,39 @@ export default defineConfig({
             return 'core-services';
           }
 
+          // Country service and currency formatter. Both are shopper-path
+          // code (checkout, cart, display formatting), but neither had a rule,
+          // and Rollup folded them into `debug` because the debug panels also
+          // import them. That gave the debug chunk twelve static importers and
+          // put 288 KB of overlay on every page. Their own chunk takes the
+          // overlay off the shopper path (campaigns-app#615 step 1). They
+          // import `state` and `enriched-lines.ts` in `state` imports the
+          // formatter back, the same two-way edge `debug` had, so the
+          // `es-bundle-init` contract test is the check that it still boots.
+          if (
+            id.includes('/core/country-service/') ||
+            /\/core\/currency-formatter\.ts$/.test(id)
+          ) {
+            return 'i18n';
+          }
+
+          // The analytics delivery tracker is read by the debug overlay but
+          // written by every provider adapter on every page, so it belongs
+          // with `analytics`, not `debug`. Listed before the `/debug/` rule
+          // because its path matches it.
+          if (
+            /\/core\/analytics\/debug\/analytics-debug-tracker\.ts$/.test(id)
+          ) {
+            return 'analytics';
+          }
+
           // The debug overlay and its panels, from wherever they live:
           // `src/core/debug/`, `src/core/analytics/debug/`,
           // `src/features/checkout/debug/`, `src/styles/debug/`.
           //
-          // This chunk is NOT lazy, despite what the rule looks like: nine
-          // chunks import it statically, so every campaign page downloads it.
-          // Fixing that is a behaviour change and wants its own e2e run.
+          // Lazy since the two rules above: nothing on the shopper path imports
+          // it statically any more, so a plain page never requests it. The
+          // overlay loads via `import()` from `sdk-initializer` in debug mode.
           //
           // Two more clauses used to sit on this line and matched nothing after
           // the `utils/` → `core/` migration: `/testMode` (the file is

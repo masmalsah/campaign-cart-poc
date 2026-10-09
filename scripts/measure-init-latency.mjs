@@ -2,7 +2,8 @@
 //
 // Loads each variant page cold, with third-party tags blocked, under a fixed
 // throttle (150 ms RTT, 1.6 Mbps down, 768 kbps up, 4x CPU), and records when
-// the SDK puts `next-display-ready` on <html>. One JSON line per run.
+// the SDK puts `next-display-ready` on <html>, plus the main-thread script and
+// task time and JS heap at that moment. One JSON line per run.
 //
 // The 4x CPU throttle exaggerates main-thread cost. Treat these numbers as
 // directional and confirm on a real device (measure-init-latency-device.mjs).
@@ -82,6 +83,10 @@ async function runOnce(variant) {
   await cdp.send('Network.enable');
   await cdp.send('Network.emulateNetworkConditions', NETWORK);
   await cdp.send('Emulation.setCPUThrottlingRate', { rate: CPU_RATE });
+  // Main-thread cost and memory, read at ready (campaigns-app#615 asks for
+  // ScriptDuration, TaskDuration and JSHeapUsedSize per step). Enabled before
+  // navigation so the counters cover the whole load.
+  await cdp.send('Performance.enable');
 
   await page.addInitScript(() => {
     window.__readyAt = null;
@@ -120,6 +125,7 @@ async function runOnce(variant) {
   } catch {
     /* ready never fired; reported as null */
   }
+  const metrics = await readMetrics(cdp);
 
   const data = await page.evaluate(
     ({ SDK_HOST, API_HOST }) => {
@@ -153,7 +159,30 @@ async function runOnce(variant) {
   );
 
   await browser.close();
-  return { ready, consoleErrors: consoleErrors.slice(0, 3), ...data };
+  return {
+    ready,
+    consoleErrors: consoleErrors.slice(0, 3),
+    ...metrics,
+    ...data,
+  };
+}
+
+// CDP Performance.getMetrics, taken the moment ready fires (or at timeout).
+// ScriptDuration and TaskDuration are seconds since Performance.enable;
+// JSHeapUsedSize is bytes. Under the 4x CPU throttle the durations are
+// inflated by about that factor; the device rig reports real silicon.
+async function readMetrics(cdp) {
+  try {
+    const { metrics } = await cdp.send('Performance.getMetrics');
+    const get = name => metrics.find(m => m.name === name)?.value;
+    return {
+      scriptMs: get('ScriptDuration') * 1000,
+      taskMs: get('TaskDuration') * 1000,
+      heapKB: get('JSHeapUsedSize') / 1024,
+    };
+  } catch {
+    return { scriptMs: null, taskMs: null, heapKB: null };
+  }
 }
 
 const span = r => r && [round(r.start), round(r.end)];
@@ -175,6 +204,9 @@ for (const variant of VARIANTS) {
         jsCampaign: span(r.api.jsCampaign),
         calculate: span(r.api.calculate),
         ready_ms: round(r.ready),
+        script_ms: round(r.scriptMs),
+        task_ms: round(r.taskMs),
+        heap_kb: round(r.heapKB),
         errors: r.consoleErrors,
       })
     );
