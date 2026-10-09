@@ -339,6 +339,21 @@ export default defineConfig({
             return 'core-services';
           }
 
+          // campaigns-app#615 step 1, applied to the stock v0.4.40 import so
+          // the overlay fix can be measured on its own. Same two rules as
+          // poc/init-latency@4b6c300c: the country service and currency
+          // formatter had no rule and Rollup folded them into `debug`; the
+          // analytics delivery tracker is written on every page.
+          if (
+            id.includes('/core/country-service/') ||
+            /\/core\/currency-formatter\.ts$/.test(id)
+          ) {
+            return 'i18n';
+          }
+          if (/\/core\/analytics\/debug\/analytics-debug-tracker\.ts$/.test(id)) {
+            return 'analytics';
+          }
+
           // The debug overlay and its panels, from wherever they live:
           // `src/core/debug/`, `src/core/analytics/debug/`,
           // `src/features/checkout/debug/`, `src/styles/debug/`.
