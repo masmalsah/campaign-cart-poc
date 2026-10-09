@@ -219,3 +219,79 @@ Open: re-run the template side's "classic async loader + inlined nextConfig"
 idea on this fixed rig — with config inlined in `<head>`, an async classic
 loader could arm the C2 prefetch at ~0.6 s instead of ~2.4 s, which is now
 worth testing properly since the prefetch demonstrably works.
+
+## Results 2026-10-09 — campaigns-app#615 step 1: debug overlay off the shopper path
+
+**Change.** Two `manualChunks` rules. The country service and currency formatter
+had no rule, and Rollup folded them into the `debug` chunk because the debug
+panels import them too; every shopper-path chunk that formats money or
+validates an address therefore imported `debug` statically (12 chunks, 288 KB
+raw). They now get an `i18n` chunk (15.5 KB raw / 4.6 KB brotli). The
+analytics delivery tracker, written by every provider adapter, moves to
+`analytics`. After this nothing on the shopper path imports `debug`; a plain
+page makes no `chunks/debug-*` request; `?debugger=true` still loads the
+overlay; the loader's preload list drops from 8 paths to 7. Contract tests
+pass (frozen chunk graph updated: `analytics → debug` and `state → debug`
+edges gone; `state ↔ i18n` keeps the two-way edge `debug` used to carry).
+
+Two builds so the fix can be read on its own and combined:
+
+| Variant | SHA | What it is |
+|---|---|---|
+| baseline | `39f806a2` | stock v0.4.40 import |
+| step1-stock | `367c48b0` (branch `poc/step1-on-stock`) | baseline + the two rules only |
+| exp-c2 | `d83b8c43` | A (static-graph preload) + C2 (worker prefetch) |
+| step1-c2 | `4b6c300c` (`poc/init-latency`) | exp-c2 + the two rules, preload list regenerated |
+
+Pages: velin silver-sheets checkout copy, same markup per pair, only the SDK
+SHA swapped. CDN warmed for all four SHAs (every dist file 200). Harness now
+also records `ScriptDuration`, `TaskDuration` and `JSHeapUsedSize` at ready.
+
+### Pixel 4a 5G, real device (the numbers to quote)
+
+Medians; baseline and step1-stock over 4 clean runs, the c2 pair over 3.
+
+| Variant | ready | Δ | first API call | script | task | heap |
+|---|---|---|---|---|---|---|
+| baseline `39f806a2` | 6.24 s | — | 5.05 s | 0.19 s | 1.21 s | 4.4 MB |
+| step1-stock `367c48b0` | **5.76 s** | **−0.48 s (−7.6%)** | 4.36 s | 0.17 s | 1.17 s | 4.6 MB |
+| exp-c2 `d83b8c43` | 6.08 s | — | 5.10 s | 0.18 s | 1.14 s | 4.8 MB |
+| step1-c2 `4b6c300c` | **5.91 s** | **−0.17 s (−2.8%)** | 5.32 s | 0.18 s | 1.18 s | 4.7 MB |
+
+Runs: baseline 6.14/6.24/6.24/6.24; step1-stock 5.70/5.71/5.81/5.92;
+exp-c2 6.06/6.08/6.15; step1-c2 5.83/5.91/6.01. No page errors in any run.
+
+### Desktop Chromium, emulated mobile, 4x CPU (directional)
+
+| Variant | ready | Δ | SDK bytes on the wire |
+|---|---|---|---|
+| baseline | 6.67 s | — | 289 KB |
+| step1-stock | 6.14 s | −0.53 s (−8%) | 237 KB |
+| exp-c2 | 6.27 s | — | 291 KB |
+| step1-c2 | 5.89 s | −0.39 s (−6%) | 239 KB |
+
+Runs (warm edge): baseline 6.64/6.67/6.78; step1-stock 6.12/6.14/6.18;
+exp-c2 6.27/6.27/6.27; step1-c2 5.88/5.89/5.93.
+
+### Reading
+
+1. **The gain is download, not CPU.** Script time, task time and heap are
+   flat within noise across all four variants on the phone. The debug chunk's
+   module bodies are cheap to evaluate; what cost was the 48–52 KB on a
+   1.6 Mbps link, which is the ~0.5 s that comes off ready on the stock build.
+   Expect #615's parse/compile line to be small; its byte line is right.
+2. **On stock, step 1 brings the first API call forward by 0.7 s** (5.05 →
+   4.36 s on device) because the core graph finishes downloading sooner. On
+   top of C2 the API call is already fired by the worker at loader time, so
+   the same byte saving only shortens the tail: −0.17 s.
+3. **Stacking.** step1-stock (5.76 s) already beats exp-c2 (6.08 s); the
+   combination (5.91 s) does not beat step1-stock on this run. With the
+   debug bytes gone, C2's worker prefetch and the preload list are competing
+   with a smaller core graph and the ordering of the remaining wins needs
+   re-measuring; A and C2 should be re-tested on top of `367c48b0`, not
+   assumed additive.
+4. Honest caveats: one phone, one page, direct-to-checkout. The first three
+   device baseline runs of the day never reached ready (no error captured at
+   the time; the device script now records page errors) and did not recur on
+   the clean rerun; they are excluded. First desktop run on each new SHA was a
+   cold edge (14.5 s, 8.8 s) and is excluded per the harness doc.
