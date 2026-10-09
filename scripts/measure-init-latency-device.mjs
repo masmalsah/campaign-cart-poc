@@ -128,6 +128,9 @@ for (const variant of VARIANTS) {
       });
     });
 
+    const consoleErrors = [];
+    page.on('pageerror', e => consoleErrors.push(String(e).slice(0, 120)));
+
     await page.goto(BASE + variant.path + (QUERY ? '?' + QUERY : ''), {
       waitUntil: 'domcontentloaded',
       timeout: READY_TIMEOUT,
@@ -172,6 +175,7 @@ for (const variant of VARIANTS) {
         script_ms: round(metrics.scriptMs),
         task_ms: round(metrics.taskMs),
         heap_kb: round(metrics.heapKB),
+        errors: consoleErrors.slice(0, 3),
       })
     );
     await context.close();

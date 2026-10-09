@@ -115,7 +115,7 @@ Desktop line:
   a jsDelivr URL means the CDN edge was cold or the SHA is wrong; rerun.
 
 The device line carries `loaderEnd_ms`, `sdkFiles`, `firstApiStart_ms`, `ready_ms`, `script_ms`,
-`task_ms` and `heap_kb`.
+`task_ms`, `heap_kb` and `errors`.
 
 ## Caveats
 
